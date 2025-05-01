@@ -121,6 +121,82 @@ public class UsuarioDAO {
         return null;
     }
 
+    public static boolean validarClaveTemporal(String email, String claveIngresada) {
+        String sql = """
+        SELECT rc.clave_temporal, rc.fecha_expiracion, rc.utilizada
+        FROM recuperacion_claves rc
+        JOIN usuarios u ON rc.usuario_id = u.id
+        WHERE u.email = ?
+        ORDER BY rc.id DESC
+        LIMIT 1
+    """;
+
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, email);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                String hashGuardado = rs.getString("clave_temporal");
+                LocalDateTime expiracion = rs.getTimestamp("fecha_expiracion").toLocalDateTime();
+                boolean yaUsada = rs.getBoolean("utilizada");
+
+                boolean coincide = BCrypt.checkpw(claveIngresada, hashGuardado);
+                boolean noExpirada = LocalDateTime.now().isBefore(expiracion);
+
+                return coincide && noExpirada && !yaUsada;
+            }
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al validar clave temporal: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+    public static void marcarClaveComoUsada(String email) {
+        String sql = """
+        UPDATE recuperacion_claves rc
+        JOIN usuarios u ON rc.usuario_id = u.id
+        SET rc.utilizada = TRUE
+        WHERE u.email = ?
+        ORDER BY rc.id DESC
+        LIMIT 1
+    """;
+
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, email);
+            stmt.executeUpdate();
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al marcar clave como usada: " + e.getMessage());
+        }
+    }
+
+    public static boolean actualizarContrasenaDefinitiva(String email, String nuevaContrasenaHash) {
+        String sql = "UPDATE usuarios SET contrasena = ? WHERE email = ?";
+
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, nuevaContrasenaHash);
+            stmt.setString(2, email);
+
+            return stmt.executeUpdate() > 0;
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al actualizar la contraseña: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+
+
+
 }
 
 

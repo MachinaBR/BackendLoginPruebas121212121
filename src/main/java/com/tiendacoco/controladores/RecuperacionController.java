@@ -60,4 +60,67 @@ public class RecuperacionController {
         }
         return sb.toString();
     }
+
+
+    @PostMapping("/validar-temporal")
+    public Map<String, Object> validarClaveTemporal(
+            @RequestParam String email,
+            @RequestParam String clave) {
+
+        Map<String, Object> respuesta = new HashMap<>();
+
+        // Validar clave temporal con lógica de DAO
+        boolean esValida = UsuarioDAO.validarClaveTemporal(email, clave);
+
+        if (esValida) {
+            // Marcarla como usada inmediatamente después de verificar
+            UsuarioDAO.marcarClaveComoUsada(email);
+            respuesta.put("valida", true);
+            respuesta.put("mensaje", "La contraseña temporal es válida. Puedes cambiarla ahora.");
+        } else {
+            respuesta.put("valida", false);
+            respuesta.put("mensaje", "Clave inválida, expirada o ya utilizada.");
+        }
+
+        return respuesta;
+    }
+
+    @PostMapping("/cambiar-contrasena")
+    public Map<String, Object> cambiarContrasena(
+            @RequestParam String email,
+            @RequestParam String claveTemporal,
+            @RequestParam String nuevaContrasena) {
+
+        Map<String, Object> respuesta = new HashMap<>();
+
+        // Verificar que la clave temporal sea válida
+        boolean esValida = UsuarioDAO.validarClaveTemporal(email, claveTemporal);
+
+        if (!esValida) {
+            respuesta.put("cambiada", false);
+            respuesta.put("mensaje", "La clave temporal no es válida o ya expiró.");
+            return respuesta;
+        }
+
+        // Encriptar la nueva contraseña
+        String nuevaHash = BCrypt.hashpw(nuevaContrasena, BCrypt.gensalt());
+
+        // Actualizar la contraseña en la tabla usuarios
+        boolean actualizada = UsuarioDAO.actualizarContrasenaDefinitiva(email, nuevaHash);
+
+        if (actualizada) {
+            // Marcar la clave temporal como usada
+            UsuarioDAO.marcarClaveComoUsada(email);
+
+            respuesta.put("cambiada", true);
+            respuesta.put("mensaje", "Contraseña actualizada exitosamente.");
+        } else {
+            respuesta.put("cambiada", false);
+            respuesta.put("mensaje", "Error al actualizar la contraseña.");
+        }
+
+        return respuesta;
+    }
+
+
 }
