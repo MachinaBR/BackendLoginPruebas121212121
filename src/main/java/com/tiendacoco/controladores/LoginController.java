@@ -25,13 +25,35 @@ public class LoginController {
             @RequestParam String usuario,
             @RequestParam String contrasena) {
 
+        Map<String, Object> respuesta = new HashMap<>();
+
         boolean esValido = UsuarioDAO.validarUsuario(usuario, contrasena);
 
-        // Construcción de respuesta JSON
-        Map<String, Object> respuesta = new HashMap<>();
-        respuesta.put("login", esValido);
-        respuesta.put("mensaje", esValido ? "Acceso concedido" : "Credenciales inválidas");
+        if (esValido) {
+            // Login correcto: reiniciar intentos fallidos
+            UsuarioDAO.reiniciarIntentosFallidos(usuario);
+            respuesta.put("login", true);
+            respuesta.put("mensaje", "Acceso concedido");
+
+        } else {
+            // Login incorrecto: aumentar contador
+            UsuarioDAO.sumarIntentoFallido(usuario);
+            int intentos = UsuarioDAO.obtenerIntentosFallidos(usuario);
+
+            respuesta.put("login", false);
+            respuesta.put("mensaje", "Credenciales inválidas");
+
+            // Si supera los 3 intentos, activar CAPTCHA
+            if (intentos >= 3) {
+                respuesta.put("captcha", true);
+                respuesta.put("intentos", intentos);
+                respuesta.put("advertencia", "Demasiados intentos fallidos. Verifica que no eres un robot.");
+            } else {
+                respuesta.put("intentos", intentos);
+            }
+        }
 
         return respuesta;
     }
+
 }

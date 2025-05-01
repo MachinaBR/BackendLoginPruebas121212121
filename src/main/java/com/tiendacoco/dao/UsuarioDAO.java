@@ -45,6 +45,7 @@ public class UsuarioDAO {
 
     // Método para verificar si el nombre de usuario ya existe en la base de datos
     public static boolean usuarioExiste(String nombreUsuario) {
+        System.out.println("🔎 Verificando existencia de: '" + nombreUsuario + "'");
         String sql = "SELECT COUNT(*) FROM usuarios WHERE nombre_usuario = ?";
         try (Connection conn = ConexionBD.obtenerConexion();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -194,7 +195,53 @@ public class UsuarioDAO {
         return false;
     }
 
+    public static void sumarIntentoFallido(String nombreUsuario) {
+        String sql = "UPDATE usuarios SET intentos_fallidos = intentos_fallidos + 1 WHERE nombre_usuario = ?";
 
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, nombreUsuario);
+            stmt.executeUpdate();
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al sumar intento fallido: " + e.getMessage());
+        }
+    }
+
+    public static void reiniciarIntentosFallidos(String nombreUsuario) {
+        String sql = "UPDATE usuarios SET intentos_fallidos = 0 WHERE nombre_usuario = ?";
+
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, nombreUsuario);
+            stmt.executeUpdate();
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al reiniciar intentos fallidos: " + e.getMessage());
+        }
+    }
+
+    public static int obtenerIntentosFallidos(String nombreUsuario) {
+        String sql = "SELECT intentos_fallidos FROM usuarios WHERE nombre_usuario = ?";
+
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, nombreUsuario);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                return rs.getInt("intentos_fallidos");
+            }
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al obtener intentos fallidos: " + e.getMessage());
+        }
+
+        return 0;
+    }
 
 
 }
