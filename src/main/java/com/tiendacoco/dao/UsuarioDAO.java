@@ -7,6 +7,8 @@ import org.mindrot.jbcrypt.BCrypt;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
 
 /**
  * Clase encargada de acceder a los datos de la tabla 'usuarios'.
@@ -74,6 +76,49 @@ public class UsuarioDAO {
             System.out.println("❌ Error al registrar usuario: " + e.getMessage());
         }
         return false;
+    }
+
+    public static boolean guardarClaveTemporal(int usuarioId, String claveTemporalHash, LocalDateTime expiracion) {
+        String sql = "INSERT INTO recuperacion_claves (usuario_id, clave_temporal, fecha_expiracion) VALUES (?, ?, ?)";
+
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, usuarioId);
+            stmt.setString(2, claveTemporalHash);
+            stmt.setTimestamp(3, Timestamp.valueOf(expiracion));
+
+            return stmt.executeUpdate() > 0;
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al guardar clave temporal: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+    public static Usuario obtenerUsuarioPorEmail(String email) {
+        String sql = "SELECT * FROM usuarios WHERE email = ?";
+        try (Connection conn = ConexionBD.obtenerConexion();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setString(1, email);
+            ResultSet rs = stmt.executeQuery();
+
+            if (rs.next()) {
+                Usuario usuario = new Usuario();
+                usuario.setId(rs.getInt("id"));
+                usuario.setNombreUsuario(rs.getString("nombre_usuario"));
+                usuario.setEmail(rs.getString("email"));
+                usuario.setContrasena(rs.getString("contrasena"));
+                usuario.setRol(rs.getString("rol"));
+                return usuario;
+            }
+
+        } catch (Exception e) {
+            System.out.println("❌ Error al buscar usuario por email: " + e.getMessage());
+        }
+        return null;
     }
 
 }
