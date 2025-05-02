@@ -1,6 +1,8 @@
 package com.tiendacoco.utils;
 
-import io.jsonwebtoken.*;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,15 +21,20 @@ public class JwtUtil {
     @Value("${jwt.expirationMs}")
     private long jwtExpirationMs;
 
-    // Este Key se inicializa una sola vez, a partir de tu String
+    // Clave interna para firmar/verificar tokens
     private Key signingKey;
 
+    /**
+     * Inicializa la clave HMAC-SHA256 a partir de jwtSecret.
+     */
     @PostConstruct
     public void init() {
-        // Crea la clave HMAC-SHA a partir de tu secret plain-text
         signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Genera un JWT con subject = username, firmado con HS256.
+     */
     public String generateToken(String username) {
         return Jwts.builder()
                 .setSubject(username)
@@ -37,6 +44,9 @@ public class JwtUtil {
                 .compact();
     }
 
+    /**
+     * Extrae el username (subject) de un token válido.
+     */
     public String getUsernameFromToken(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(signingKey)
@@ -46,6 +56,9 @@ public class JwtUtil {
                 .getSubject();
     }
 
+    /**
+     * Valida firma y expiración del JWT.
+     */
     public boolean validateToken(String token) {
         try {
             Jwts.parserBuilder()
@@ -53,8 +66,8 @@ public class JwtUtil {
                     .build()
                     .parseClaimsJws(token);
             return true;
-        } catch (JwtException e) {
-            // aquí podrías loguear e.getMessage()
+        } catch (JwtException ex) {
+            // Token inválido/expirado/etc.
             return false;
         }
     }

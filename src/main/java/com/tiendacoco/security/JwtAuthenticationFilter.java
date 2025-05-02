@@ -13,6 +13,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Collections;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -27,15 +28,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String header = req.getHeader("Authorization");
+        System.out.println("[JWT-FILTER] Authorization header: " + header);
+
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
+            System.out.println("[JWT-FILTER] Token extraído: " + token);
+
             if (jwtUtil.validateToken(token)) {
                 String username = jwtUtil.getUsernameFromToken(token);
-                var auth = new UsernamePasswordAuthenticationToken(
-                        username, null, java.util.Collections.emptyList()
-                );
+                System.out.println("[JWT-FILTER] Token válido para usuario: " + username);
+
+                UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(username, null, Collections.emptyList());
                 auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(req));
                 SecurityContextHolder.getContext().setAuthentication(auth);
+
+            } else {
+                System.out.println("[JWT-FILTER] Token inválido o expirado");
             }
         }
 
