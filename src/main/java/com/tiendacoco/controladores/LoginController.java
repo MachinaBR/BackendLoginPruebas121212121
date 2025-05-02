@@ -1,59 +1,60 @@
 package com.tiendacoco.controladores;
 
 import com.tiendacoco.dao.UsuarioDAO;
+import com.tiendacoco.utils.CaptchaValidator;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Controlador REST que maneja el inicio de sesión.
- * Recibe credenciales por POST y responde con un JSON indicando el resultado.
- */
 @RestController
 @RequestMapping("/api")
 public class LoginController {
 
-    /**
-     * Endpoint POST para validar credenciales de usuario.
-     * @param usuario Nombre del usuario recibido desde el frontend
-     * @param contrasena Contraseña recibida desde el frontend
-     * @return JSON con el resultado del login
-     */
+    @Autowired
+    private UsuarioDAO usuarioDAO;
+
     @PostMapping("/login")
     public Map<String, Object> login(
             @RequestParam String usuario,
-            @RequestParam String contrasena) {
-
+            @RequestParam String contrasena,
+            @RequestParam(required = false) String captchaToken
+    ) {
         Map<String, Object> respuesta = new HashMap<>();
 
-        boolean esValido = UsuarioDAO.validarUsuario(usuario, contrasena);
+        int intentos = usuarioDAO.obtenerIntentosFallidos(usuario);
 
-        if (esValido) {
-            // Login correcto: reiniciar intentos fallidos
-            UsuarioDAO.reiniciarIntentosFallidos(usuario);
-            respuesta.put("login", true);
-            respuesta.put("mensaje", "Acceso concedido");
-
-        } else {
-            // Login incorrecto: aumentar contador
-            UsuarioDAO.sumarIntentoFallido(usuario);
-            int intentos = UsuarioDAO.obtenerIntentosFallidos(usuario);
-
-            respuesta.put("login", false);
-            respuesta.put("mensaje", "Credenciales inválidas");
-
-            // Si supera los 3 intentos, activar CAPTCHA
-            if (intentos >= 3) {
+        if (intentos >= 3) {
+            if (captchaToken == null || !CaptchaValidator.validarCaptcha(captchaToken)) {
+                respuesta.put("login", false);
+                respuesta.put("captchaValido", false);
+                respuesta.put("mensaje", "Captcha inválido o faltante.");
                 respuesta.put("captcha", true);
                 respuesta.put("intentos", intentos);
+                return respuesta;
+            }
+        }
+
+        boolean esValido = usuarioDAO.validarUsuario(usuario, contrasena);
+
+        if (esValido) {
+            usuarioDAO.reiniciarIntentosFallidos(usuario);
+            respuesta.put("login", true);
+            respuesta.put("mensaje", "Acceso concedido");
+        } else {
+            usuarioDAO.sumarIntentoFallido(usuario);
+            intentos = usuarioDAO.obtenerIntentosFallidos(usuario);
+            respuesta.put("login", false);
+            respuesta.put("mensaje", "Credenciales inválidas");
+            respuesta.put("intentos", intentos);
+
+            if (intentos >= 3) {
+                respuesta.put("captcha", true);
                 respuesta.put("advertencia", "Demasiados intentos fallidos. Verifica que no eres un robot.");
-            } else {
-                respuesta.put("intentos", intentos);
             }
         }
 
         return respuesta;
     }
-
 }

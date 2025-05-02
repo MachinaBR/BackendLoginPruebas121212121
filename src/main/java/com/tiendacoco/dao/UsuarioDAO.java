@@ -1,249 +1,140 @@
 package com.tiendacoco.dao;
 
 import com.tiendacoco.modelos.Usuario;
-import com.tiendacoco.utils.ConexionBD;
+import com.tiendacoco.modelos.RecuperacionClave;
+import com.tiendacoco.repositorio.UsuarioRepository;
+import com.tiendacoco.repositorio.RecuperacionClaveRepository;
 import org.mindrot.jbcrypt.BCrypt;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
-/**
- * Clase encargada de acceder a los datos de la tabla 'usuarios'.
- * Aquí se implementa la validación del usuario con contraseñas encriptadas usando BCrypt.
- */
+@Service
 public class UsuarioDAO {
 
-    /**
-     * Método que valida si un usuario existe con el nombre y contraseña proporcionados.
-     * @param nombreUsuario Nombre ingresado por el usuario.
-     * @param contrasena Contraseña ingresada por el usuario (sin encriptar).
-     * @return true si las credenciales son válidas, false en caso contrario.
-     */
-    public static boolean validarUsuario(String nombreUsuario, String contrasena) {
-        String sql = "SELECT * FROM usuarios WHERE nombre_usuario = ?";
+    @Autowired
+    private UsuarioRepository usuarioRepository;
 
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+    @Autowired
+    private RecuperacionClaveRepository recuperacionRepo;
 
-            stmt.setString(1, nombreUsuario);
-            ResultSet rs = stmt.executeQuery();
-
-            if (rs.next()) {
-                String hashBD = rs.getString("contrasena");
-                return BCrypt.checkpw(contrasena, hashBD); // Compara contraseña con hash
-            }
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al validar usuario: " + e.getMessage());
-        }
-
-        return false;
-    }
-
-    // Método para verificar si el nombre de usuario ya existe en la base de datos
-    public static boolean usuarioExiste(String nombreUsuario) {
-        System.out.println("🔎 Verificando existencia de: '" + nombreUsuario + "'");
-        String sql = "SELECT COUNT(*) FROM usuarios WHERE nombre_usuario = ?";
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, nombreUsuario);
-            ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                return rs.getInt(1) > 0; // Si el contador es mayor que cero, ya existe
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    /** Valida un login comparando la contraseña en texto plano con el hash guardado. */
+    public boolean validarUsuario(String nombreUsuario, String contrasena) {
+        Optional<Usuario> usuarioOpt = usuarioRepository.findByNombreUsuario(nombreUsuario);
+        if (usuarioOpt.isPresent()) {
+            String hashBD = usuarioOpt.get().getContrasena();
+            return BCrypt.checkpw(contrasena, hashBD);
         }
         return false;
     }
 
-    // Método para registrar un nuevo usuario con contraseña encriptada
-    public static boolean registrarUsuario(String nombreUsuario, String contrasenaHash, String email, String rol) {
-        String sql = "INSERT INTO usuarios (nombre_usuario, contrasena, email, rol) VALUES (?, ?, ?, ?)";
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+    /** Comprueba si ya existe un usuario con ese nombre. */
+    public boolean usuarioExiste(String nombreUsuario) {
+        return usuarioRepository.existsByNombreUsuario(nombreUsuario);
+    }
 
-            stmt.setString(1, nombreUsuario);
-            stmt.setString(2, contrasenaHash);
-            stmt.setString(3, email);
-            stmt.setString(4, rol);
-
-            return stmt.executeUpdate() > 0; // true si se insertó correctamente
+    /** Inserta un nuevo usuario con contraseña hasheada. */
+    public boolean registrarUsuario(String nombreUsuario, String contrasenaHash, String email, String rol) {
+        try {
+            Usuario nuevo = new Usuario();
+            nuevo.setNombreUsuario(nombreUsuario);
+            nuevo.setContrasena(contrasenaHash);
+            nuevo.setEmail(email);
+            nuevo.setRol(rol);
+            usuarioRepository.save(nuevo);
+            return true;
         } catch (Exception e) {
             System.out.println("❌ Error al registrar usuario: " + e.getMessage());
+            return false;
         }
-        return false;
     }
 
-    public static boolean guardarClaveTemporal(int usuarioId, String claveTemporalHash, LocalDateTime expiracion) {
-        String sql = "INSERT INTO recuperacion_claves (usuario_id, clave_temporal, fecha_expiracion) VALUES (?, ?, ?)";
+    /** Incrementa en 1 el contador de intentos fallidos. */
+    public void sumarIntentoFallido(String nombreUsuario) {
+        usuarioRepository.findByNombreUsuario(nombreUsuario).ifPresent(u -> {
+            u.setIntentosFallidos(u.getIntentosFallidos() + 1);
+            usuarioRepository.save(u);
+        });
+    }
 
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+    /** Pone a cero el contador de intentos fallidos. */
+    public void reiniciarIntentosFallidos(String nombreUsuario) {
+        usuarioRepository.findByNombreUsuario(nombreUsuario).ifPresent(u -> {
+            u.setIntentosFallidos(0);
+            usuarioRepository.save(u);
+        });
+    }
 
-            stmt.setInt(1, usuarioId);
-            stmt.setString(2, claveTemporalHash);
-            stmt.setTimestamp(3, Timestamp.valueOf(expiracion));
+    /** Recupera el número de intentos fallidos de un usuario. */
+    public int obtenerIntentosFallidos(String nombreUsuario) {
+        return usuarioRepository.findByNombreUsuario(nombreUsuario)
+                .map(Usuario::getIntentosFallidos)
+                .orElse(0);
+    }
 
-            return stmt.executeUpdate() > 0;
+    /** Busca un usuario por su email. */
+    public Usuario obtenerUsuarioPorEmail(String email) {
+        return usuarioRepository.findByEmail(email).orElse(null);
+    }
 
+    /**
+     * Crea y guarda una clave temporal para recuperación de contraseña.
+     * @param usuarioId       Id numérico del usuario
+     * @param claveTemporalHash  Hash de la clave generada
+     * @param expiracion      Fecha de expiración
+     */
+    public boolean guardarClaveTemporal(int usuarioId, String claveTemporalHash, LocalDateTime expiracion) {
+        try {
+            Optional<Usuario> userOpt = usuarioRepository.findById(usuarioId);
+            if (userOpt.isEmpty()) return false;
+            RecuperacionClave rc = new RecuperacionClave();
+            rc.setUsuario(userOpt.get());
+            rc.setClaveTemporal(claveTemporalHash);
+            rc.setFechaExpiracion(expiracion);
+            rc.setUtilizada(false);
+            recuperacionRepo.save(rc);
+            return true;
         } catch (Exception e) {
             System.out.println("❌ Error al guardar clave temporal: " + e.getMessage());
+            return false;
         }
+    }
 
+    /**
+     * Valida que la clave temporal coincida, no haya expirado y no se haya usado.
+     */
+    public boolean validarClaveTemporal(String email, String claveIngresada) {
+        Usuario u = obtenerUsuarioPorEmail(email);
+        if (u == null) return false;
+        Optional<RecuperacionClave> rcOpt = recuperacionRepo.findTopByUsuarioOrderByIdDesc(u);
+        if (rcOpt.isEmpty()) return false;
+        RecuperacionClave rc = rcOpt.get();
+        boolean coincide   = BCrypt.checkpw(claveIngresada, rc.getClaveTemporal());
+        boolean noExpirada = LocalDateTime.now().isBefore(rc.getFechaExpiracion());
+        return coincide && noExpirada && !rc.isUtilizada();
+    }
+
+    /** Marca la última clave temporal como usada. */
+    public void marcarClaveComoUsada(String email) {
+        Usuario u = obtenerUsuarioPorEmail(email);
+        if (u == null) return;
+        recuperacionRepo.findTopByUsuarioOrderByIdDesc(u).ifPresent(rc -> {
+            rc.setUtilizada(true);
+            recuperacionRepo.save(rc);
+        });
+    }
+
+    /** Actualiza la contraseña definitiva del usuario. */
+    public boolean actualizarContrasenaDefinitiva(String email, String nuevaContrasenaHash) {
+        Optional<Usuario> userOpt = usuarioRepository.findByEmail(email);
+        if (userOpt.isPresent()) {
+            Usuario u = userOpt.get();
+            u.setContrasena(nuevaContrasenaHash);
+            usuarioRepository.save(u);
+            return true;
+        }
         return false;
     }
-
-    public static Usuario obtenerUsuarioPorEmail(String email) {
-        String sql = "SELECT * FROM usuarios WHERE email = ?";
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, email);
-            ResultSet rs = stmt.executeQuery();
-
-            if (rs.next()) {
-                Usuario usuario = new Usuario();
-                usuario.setId(rs.getInt("id"));
-                usuario.setNombreUsuario(rs.getString("nombre_usuario"));
-                usuario.setEmail(rs.getString("email"));
-                usuario.setContrasena(rs.getString("contrasena"));
-                usuario.setRol(rs.getString("rol"));
-                return usuario;
-            }
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al buscar usuario por email: " + e.getMessage());
-        }
-        return null;
-    }
-
-    public static boolean validarClaveTemporal(String email, String claveIngresada) {
-        String sql = """
-        SELECT rc.clave_temporal, rc.fecha_expiracion, rc.utilizada
-        FROM recuperacion_claves rc
-        JOIN usuarios u ON rc.usuario_id = u.id
-        WHERE u.email = ?
-        ORDER BY rc.id DESC
-        LIMIT 1
-    """;
-
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, email);
-            ResultSet rs = stmt.executeQuery();
-
-            if (rs.next()) {
-                String hashGuardado = rs.getString("clave_temporal");
-                LocalDateTime expiracion = rs.getTimestamp("fecha_expiracion").toLocalDateTime();
-                boolean yaUsada = rs.getBoolean("utilizada");
-
-                boolean coincide = BCrypt.checkpw(claveIngresada, hashGuardado);
-                boolean noExpirada = LocalDateTime.now().isBefore(expiracion);
-
-                return coincide && noExpirada && !yaUsada;
-            }
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al validar clave temporal: " + e.getMessage());
-        }
-
-        return false;
-    }
-
-    public static void marcarClaveComoUsada(String email) {
-        String sql = """
-        UPDATE recuperacion_claves rc
-        JOIN usuarios u ON rc.usuario_id = u.id
-        SET rc.utilizada = TRUE
-        WHERE u.email = ?
-        ORDER BY rc.id DESC
-        LIMIT 1
-    """;
-
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, email);
-            stmt.executeUpdate();
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al marcar clave como usada: " + e.getMessage());
-        }
-    }
-
-    public static boolean actualizarContrasenaDefinitiva(String email, String nuevaContrasenaHash) {
-        String sql = "UPDATE usuarios SET contrasena = ? WHERE email = ?";
-
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, nuevaContrasenaHash);
-            stmt.setString(2, email);
-
-            return stmt.executeUpdate() > 0;
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al actualizar la contraseña: " + e.getMessage());
-        }
-
-        return false;
-    }
-
-    public static void sumarIntentoFallido(String nombreUsuario) {
-        String sql = "UPDATE usuarios SET intentos_fallidos = intentos_fallidos + 1 WHERE nombre_usuario = ?";
-
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, nombreUsuario);
-            stmt.executeUpdate();
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al sumar intento fallido: " + e.getMessage());
-        }
-    }
-
-    public static void reiniciarIntentosFallidos(String nombreUsuario) {
-        String sql = "UPDATE usuarios SET intentos_fallidos = 0 WHERE nombre_usuario = ?";
-
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, nombreUsuario);
-            stmt.executeUpdate();
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al reiniciar intentos fallidos: " + e.getMessage());
-        }
-    }
-
-    public static int obtenerIntentosFallidos(String nombreUsuario) {
-        String sql = "SELECT intentos_fallidos FROM usuarios WHERE nombre_usuario = ?";
-
-        try (Connection conn = ConexionBD.obtenerConexion();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, nombreUsuario);
-            ResultSet rs = stmt.executeQuery();
-
-            if (rs.next()) {
-                return rs.getInt("intentos_fallidos");
-            }
-
-        } catch (Exception e) {
-            System.out.println("❌ Error al obtener intentos fallidos: " + e.getMessage());
-        }
-
-        return 0;
-    }
-
-
 }
-
-
