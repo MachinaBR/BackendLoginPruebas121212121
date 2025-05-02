@@ -25,6 +25,9 @@
     <dependencies>
 
 
+
+
+
         <!-- Spring Boot -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -42,6 +45,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+
 
 
         <!-- Base de datos -->
@@ -111,6 +115,8 @@
             <version>2.11.0</version>
         </dependency>
 
+
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -122,7 +128,10 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+
     </dependencies>
+
+
 
     <build>
         <plugins>
