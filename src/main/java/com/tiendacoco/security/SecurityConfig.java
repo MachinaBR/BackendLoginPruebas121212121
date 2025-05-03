@@ -3,6 +3,7 @@ package com.tiendacoco.security;
 import com.tiendacoco.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -26,17 +27,21 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                // 0) Activa CORS con la fuente que definimos más abajo
+                .cors(Customizer.withDefaults())
+
+                // 1) Deshabilita CSRF (no lo necesitas cuando trabajas con JWT)
                 .csrf(AbstractHttpConfigurer::disable)
 
-                // 2) Stateless: no dejamos sesiones en el servidor
+                // 2) Stateless: no mantenemos sesiones en el servidor
                 .sessionManagement(sm ->
                         sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
 
-                // 3) Definimos los endpoints públicos
+                // 3) Rutas públicas y protegidas
                 .authorizeHttpRequests(auth ->
                         auth
+                                // Estas URLs quedan abiertas
                                 .requestMatchers(
                                         "/api/login",
                                         "/api/registro",
@@ -44,28 +49,31 @@ public class SecurityConfig {
                                         "/api/validar-temporal",
                                         "/api/cambiar-contrasena"
                                 ).permitAll()
+                                // El resto exige un token válido
                                 .anyRequest().authenticated()
                 )
 
-                // 4) Registramos nuestro filtro JWT antes que el de usuario/clave
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-        ;
+                // 4) Nuestro filtro de JWT antes que el de formulario
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
     /**
-     * Bean para configurar CORS (orígenes, headers y métodos) en toda la API.
+     * Definimos aquí el bean que expone la configuración de CORS para
+     * todas las rutas que empiecen por /api/
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(List.of("http://localhost:3000")); // tu front
-        cfg.setAllowedMethods(List.of("GET","POST","PUT","DELETE","OPTIONS"));
+        cfg.setAllowedOrigins(List.of("http://localhost:3000", "http://localhost:3001"
+        ));    // tu React App
+        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
         cfg.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+        // Aplica CORS a todas las rutas bajo /api/
         src.registerCorsConfiguration("/api/**", cfg);
         return src;
     }
